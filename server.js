@@ -7,7 +7,7 @@ async function testNotion() {
   try {
     // Get page ID from URL: notion.so/PageTitle-abc123def456
     // The ID is the last part after the dash
-    const pageId = 'YOUR_PAGE_ID_HERE'; // Paste from your test page URL
+    const pageId = '2fdf74a3ceec80ed8c4fd51ae50e656f'; // Paste from your test page URL
     
     const page = await notion.pages.retrieve({ page_id: pageId });
     console.log('✅ Connected to Notion!');
