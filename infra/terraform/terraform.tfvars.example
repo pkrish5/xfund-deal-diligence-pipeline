@@ -1,0 +1,17 @@
+# Example: copy to terraform.tfvars and fill in values
+project_id = "your-gcp-project-id"
+region     = "us-central1"
+db_password = "change-me-strong-password"
+
+# Leave these empty if you want to configure secrets manually via gcloud
+# gcal_oauth_client_id     = ""
+# gcal_oauth_client_secret = ""
+# gcal_refresh_token       = ""
+# asana_token              = ""
+# notion_token             = ""
+# openai_api_key           = ""
+
+# Docker images (update after building)
+# ingress_image = "gcr.io/your-project/diligence-ingress:latest"
+# admin_image   = "gcr.io/your-project/diligence-admin:latest"
+# worker_image  = "gcr.io/your-project/diligence-worker:latest"

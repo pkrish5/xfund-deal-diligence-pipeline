@@ -1,0 +1,23 @@
+{
+    "name": "@xfund/shared",
+    "version": "1.0.0",
+    "private": true,
+    "main": "./src/index.ts",
+    "types": "./src/index.ts",
+    "scripts": {
+        "build": "tsc -b",
+        "test": "vitest run"
+    },
+    "dependencies": {
+        "@google-cloud/secret-manager": "^5.5.0",
+        "@google-cloud/tasks": "^5.1.0",
+        "@notionhq/client": "^2.2.14",
+        "dotenv": "^17.2.4",
+        "googleapis": "^130.0.0",
+        "openai": "^4.28.0",
+        "pg": "^8.11.3"
+    },
+    "devDependencies": {
+        "@types/pg": "^8.10.9"
+    }
+}

@@ -1,19 +1,30 @@
 {
   "name": "xfund-deal-pipeline",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "private": true,
+  "description": "GCP-based deal diligence automation (GCal → Asana → Notion)",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "npm run build --workspaces --if-present",
+    "build:shared": "npm run build -w packages/shared",
+    "dev:ingress": "npm run dev -w apps/ingress",
+    "dev:admin": "npm run dev -w apps/admin",
+    "dev:worker": "npm run dev -w apps/worker",
+    "db:migrate": "tsx packages/shared/src/db/migrate.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "tsc --noEmit"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
-  "dependencies": {
-    "@notionhq/client": "^5.9.0",
-    "better-sqlite3": "^12.6.2",
-    "dotenv": "^17.2.3",
-    "express": "^5.2.1"
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3",
+    "vitest": "^1.2.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
   }
 }
