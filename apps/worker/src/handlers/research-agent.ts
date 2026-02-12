@@ -24,9 +24,10 @@ export async function handleResearchAgent(
         dealId: string;
         companyName: string;
         founderName: string;
+        additionalContext?: string;
     }
 ): Promise<void> {
-    const { runId, agentKey, dealId, companyName, founderName } = payload;
+    const { runId, agentKey, dealId, companyName, founderName, additionalContext } = payload;
     const log = logger.child({ tenantId, runId, agentKey, dealId, jobType: 'RESEARCH_AGENT' });
 
     // Check cancellation before starting
@@ -56,7 +57,7 @@ export async function handleResearchAgent(
     }, 5000); // Check every 5 seconds
 
     try {
-        // Initialize LLM client
+        // Initialize LLM client (uses OpenAI Responses API with web search)
         const llm = new LLMClient({
             apiKey: await getSecret('OPENAI_API_KEY'),
             model: process.env.LLM_MODEL || 'gpt-4o',
@@ -67,7 +68,7 @@ export async function handleResearchAgent(
             agentKey,
             companyName,
             founderName,
-            '', // Additional context could come from deal notes
+            additionalContext || '', // Pass meeting notes context
             abortController.signal
         );
 
@@ -92,15 +93,21 @@ export async function handleResearchAgent(
                         parentPageId: process.env.NOTION_PARENT_PAGE_ID || '',
                     });
 
+                    const pageId = extractPageId(researchPageId);
+
                     const agentTitle = formatAgentTitle(agentKey);
-                    await notion.appendBlocks(extractPageId(researchPageId), [
-                        notion.heading3(`${agentTitle} (AI Research)`),
-                        ...notion.createParagraphBlocks(result.summary),
+
+                    // Parse LLM markdown into proper Notion blocks
+                    const contentBlocks = notion.markdownToBlocks(result.summary);
+
+                    await notion.appendBlocks(pageId, [
+                        notion.heading2(`${agentTitle}`),
+                        ...contentBlocks,
                         ...(result.citations.length > 0
                             ? [
                                 notion.heading3('Sources'),
                                 ...result.citations.map((c) =>
-                                    notion.bulletedList(`${c.title}${c.url ? ` — ${c.url}` : ''} (confidence: ${c.confidence})`)
+                                    notion.bulletedList(`${c.title}${c.url ? ` — ${c.url}` : ''}`)
                                 ),
                             ]
                             : []),

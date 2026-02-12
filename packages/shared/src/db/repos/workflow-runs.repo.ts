@@ -48,7 +48,7 @@ export async function getRunningRunsForDeal(dealId: string): Promise<WorkflowRun
 
 export async function requestCancellation(dealId: string): Promise<number> {
     return execute(
-        `UPDATE workflow_runs SET cancel_requested = true, updated_at = now()
+        `UPDATE workflow_runs SET cancel_requested = true
      WHERE deal_id = $1 AND status = 'running'`,
         [dealId]
     );

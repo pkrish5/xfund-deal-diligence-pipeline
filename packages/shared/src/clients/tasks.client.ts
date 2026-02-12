@@ -3,6 +3,7 @@ export type JobType =
     | 'ASANA_PROCESS'
     | 'STAGE_ACTION'
     | 'RESEARCH_AGENT'
+    | 'RESEARCH_BATCH'
     | 'MEMO_GENERATE';
 
 const QUEUE_MAP: Record<JobType, string> = {
@@ -10,6 +11,7 @@ const QUEUE_MAP: Record<JobType, string> = {
     ASANA_PROCESS: 'q-asana-events',
     STAGE_ACTION: 'q-stage-actions',
     RESEARCH_AGENT: 'q-research',
+    RESEARCH_BATCH: 'q-research',
     MEMO_GENERATE: 'q-research',
 };
 

@@ -84,18 +84,7 @@ export class NotionClient {
             ]),
             this.createPage(dealPageId, '🔍 Research', [
                 this.heading2('Research'),
-                this.callout('Research results will be populated automatically when the deal enters diligence.'),
-                this.divider(),
-                this.heading3('Market & TAM'),
-                this.paragraph('_Pending..._'),
-                this.heading3('Competitors'),
-                this.paragraph('_Pending..._'),
-                this.heading3('Founder Background'),
-                this.paragraph('_Pending..._'),
-                this.heading3('Product & Defensibility'),
-                this.paragraph('_Pending..._'),
-                this.heading3('Traction Signals'),
-                this.paragraph('_Pending..._'),
+                this.callout('Research will be populated automatically when the deal enters diligence.'),
             ]),
             this.createPage(dealPageId, '⚠️ Risks & Red Flags', [
                 this.heading2('Risks & Red Flags'),
@@ -151,6 +140,43 @@ export class NotionClient {
     }
 
     /**
+     * Update the 'Stage' and 'Status' text blocks on the deal page.
+     * Searches for blocks starting with 'Stage:' or 'Status:' and updates them.
+     */
+    async updateDealStatus(dealPageId: string, stage: string, status: string): Promise<void> {
+        // 1. List blocks to find the Stage and Status paragraphs
+        const response = await this.client.blocks.children.list({
+            block_id: dealPageId,
+        });
+
+        const updates: Promise<any>[] = [];
+
+        for (const block of response.results as any[]) {
+            if (block.type === 'paragraph' && block.paragraph.rich_text.length > 0) {
+                const text = block.paragraph.rich_text[0].plain_text;
+
+                if (text.startsWith('Stage:')) {
+                    updates.push(this.client.blocks.update({
+                        block_id: block.id,
+                        paragraph: {
+                            rich_text: [{ type: 'text', text: { content: `Stage: ${stage}` } }],
+                        },
+                    }));
+                } else if (text.startsWith('Status:')) {
+                    updates.push(this.client.blocks.update({
+                        block_id: block.id,
+                        paragraph: {
+                            rich_text: [{ type: 'text', text: { content: `Status: ${status}` } }],
+                        },
+                    }));
+                }
+            }
+        }
+
+        await Promise.all(updates);
+    }
+
+    /**
      * Archive (soft-delete) a page.
      */
     async archivePage(pageId: string): Promise<void> {
@@ -192,6 +218,150 @@ export class NotionClient {
         }
 
         return content.trim();
+    }
+
+    /**
+     * Clear all blocks on a page (used to remove placeholders before writing research).
+     */
+    async clearPageContent(pageId: string): Promise<void> {
+        const response = await this.client.blocks.children.list({
+            block_id: pageId,
+        });
+
+        for (const block of response.results as any[]) {
+            try {
+                await this.client.blocks.delete({ block_id: block.id });
+            } catch {
+                // Ignore errors for blocks that can't be deleted
+            }
+        }
+    }
+
+    /**
+     * Parse inline markdown (bold, italic) into Notion rich_text objects.
+     */
+    private parseRichText(text: string): Array<{ type: 'text'; text: { content: string }; annotations?: { bold?: boolean; italic?: boolean } }> {
+        const segments: Array<{ type: 'text'; text: { content: string }; annotations?: { bold?: boolean; italic?: boolean } }> = [];
+
+        // Match **bold**, *italic*, or plain text segments
+        const regex = /(\*\*(.+?)\*\*|\*(.+?)\*|([^*]+))/g;
+        let match;
+
+        while ((match = regex.exec(text)) !== null) {
+            if (match[2]) {
+                // **bold**
+                segments.push({
+                    type: 'text',
+                    text: { content: match[2] },
+                    annotations: { bold: true },
+                });
+            } else if (match[3]) {
+                // *italic*
+                segments.push({
+                    type: 'text',
+                    text: { content: match[3] },
+                    annotations: { italic: true },
+                });
+            } else if (match[4]) {
+                // plain text
+                segments.push({
+                    type: 'text',
+                    text: { content: match[4] },
+                });
+            }
+        }
+
+        if (segments.length === 0) {
+            segments.push({ type: 'text', text: { content: text } });
+        }
+
+        return segments;
+    }
+
+    /**
+     * Create a block with rich text (supports bold/italic).
+     */
+    private richParagraph(text: string): BlockObjectRequest {
+        return {
+            object: 'block',
+            type: 'paragraph',
+            paragraph: { rich_text: this.parseRichText(text) },
+        } as BlockObjectRequest;
+    }
+
+    private richBullet(text: string): BlockObjectRequest {
+        return {
+            object: 'block',
+            type: 'bulleted_list_item',
+            bulleted_list_item: { rich_text: this.parseRichText(text) },
+        } as BlockObjectRequest;
+    }
+
+    private richNumbered(text: string): BlockObjectRequest {
+        return {
+            object: 'block',
+            type: 'numbered_list_item',
+            numbered_list_item: { rich_text: this.parseRichText(text) },
+        } as BlockObjectRequest;
+    }
+
+    /**
+     * Parse markdown-style text into proper Notion blocks.
+     * Supports: ## headings, ### headings, - bullets, numbered lists, **bold**, *italic*, and paragraphs.
+     */
+    markdownToBlocks(markdown: string): BlockObjectRequest[] {
+        const blocks: BlockObjectRequest[] = [];
+        const lines = markdown.split('\n');
+
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i].trim();
+            if (!line) continue;
+
+            // ## Heading 2
+            if (line.startsWith('## ')) {
+                blocks.push(this.heading2(line.slice(3).trim()));
+            }
+            // ### Heading 3
+            else if (line.startsWith('### ')) {
+                blocks.push(this.heading3(line.slice(4).trim()));
+            }
+            // # Heading 1 (treat as heading 2 in Notion)
+            else if (line.startsWith('# ')) {
+                blocks.push(this.heading2(line.slice(2).trim()));
+            }
+            // - Bullet or * Bullet (but not ** which is bold)
+            else if (/^-\s/.test(line) || /^\*\s[^*]/.test(line)) {
+                const text = line.replace(/^[-*]\s+/, '');
+                if (text.length > 2000) {
+                    blocks.push(this.richBullet(text.substring(0, 2000)));
+                } else {
+                    blocks.push(this.richBullet(text));
+                }
+            }
+            // Numbered list (1. 2. 3. etc)
+            else if (/^\d+\.\s/.test(line)) {
+                const text = line.replace(/^\d+\.\s+/, '');
+                blocks.push(this.richNumbered(text.length > 2000 ? text.substring(0, 2000) : text));
+            }
+            // --- or *** divider
+            else if (/^[-*]{3,}$/.test(line)) {
+                blocks.push(this.divider());
+            }
+            // Regular paragraph
+            else {
+                if (line.length > 2000) {
+                    let remaining = line;
+                    while (remaining.length > 0) {
+                        blocks.push(this.richParagraph(remaining.substring(0, 2000)));
+                        remaining = remaining.substring(2000);
+                    }
+                } else {
+                    blocks.push(this.richParagraph(line));
+                }
+            }
+        }
+
+        return blocks;
     }
 
     // ---- Block builders ----
@@ -295,6 +465,16 @@ export class NotionClient {
             object: 'block',
             type: 'bulleted_list_item',
             bulleted_list_item: {
+                rich_text: [{ type: 'text', text: { content: text } }],
+            },
+        };
+    }
+
+    numberedList(text: string): BlockObjectRequest {
+        return {
+            object: 'block',
+            type: 'numbered_list_item',
+            numbered_list_item: {
                 rich_text: [{ type: 'text', text: { content: text } }],
             },
         };

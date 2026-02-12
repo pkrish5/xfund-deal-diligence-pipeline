@@ -4,6 +4,7 @@ import { handleGcalSync } from '../handlers/gcal-sync.js';
 import { handleAsanaProcess } from '../handlers/asana-process.js';
 import { handleStageAction } from '../handlers/stage-action.js';
 import { handleResearchAgent } from '../handlers/research-agent.js';
+import { handleResearchBatch } from '../handlers/research-batch.js';
 import { handleMemoGenerate } from '../handlers/memo-generate.js';
 
 export const dispatchRouter = Router();
@@ -15,6 +16,7 @@ const HANDLERS: Record<JobType, Handler> = {
     ASANA_PROCESS: handleAsanaProcess,
     STAGE_ACTION: handleStageAction,
     RESEARCH_AGENT: handleResearchAgent,
+    RESEARCH_BATCH: handleResearchBatch,
     MEMO_GENERATE: handleMemoGenerate,
 };
 

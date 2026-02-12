@@ -12,15 +12,6 @@ import {
 
 const tasksEnqueuer = createTasksEnqueuer();
 
-const RESEARCH_AGENT_KEYS = [
-    'market_tam',
-    'competitors',
-    'founder_background',
-    'risks_redflags',
-    'product_defensibility',
-    'traction_signals',
-];
-
 /**
  * STAGE_ACTION handler
  * Payload: { taskGid, stageKey, sectionGid, modifiedAt, previousStage? }
@@ -61,6 +52,32 @@ export async function handleStageAction(
 
     // Update deal stage
     await dealsRepo.updateDealStage(deal.id, stageKey);
+
+    // Sync status to Notion
+    if (deal.notion_deal_page_id) {
+        try {
+            const notion = new NotionClient({
+                token: await getSecret('NOTION_TOKEN'),
+                parentPageId: process.env.NOTION_PARENT_PAGE_ID || '',
+            });
+
+            const statusMap: Record<string, string> = {
+                FIRST_MEETING: 'Idle',
+                IN_DILIGENCE: 'Active',
+                IC_REVIEW: 'Reviewing',
+                PASS: 'Passed',
+                ARCHIVE: 'Archived',
+            };
+
+            await notion.updateDealStatus(
+                deal.notion_deal_page_id,
+                stageKey,
+                statusMap[stageKey] || 'Unknown'
+            );
+        } catch (err: any) {
+            log.warn('Failed to sync status to Notion', { error: err.message });
+        }
+    }
 
     // If leaving IN_DILIGENCE or entering PASS, cancel any running workflows
     if (
@@ -164,21 +181,75 @@ async function handleInDiligence(
 ): Promise<void> {
     const asana = new AsanaClient({ token: await getSecret('ASANA_TOKEN') });
 
-    // Spawn parallel research agents
-    const researchTasks = RESEARCH_AGENT_KEYS.map((agentKey) => ({
-        jobType: 'RESEARCH_AGENT' as const,
+    // Fetch meeting notes from Notion if available
+    let additionalContext = '';
+    if (deal.notion_urls) {
+        try {
+            const notionUrls = typeof deal.notion_urls === 'string'
+                ? JSON.parse(deal.notion_urls)
+                : deal.notion_urls;
+
+            const meetingNotesUrl = notionUrls.meetingNotes;
+            if (meetingNotesUrl) {
+                const notion = new NotionClient({
+                    token: await getSecret('NOTION_TOKEN'),
+                    parentPageId: process.env.NOTION_PARENT_PAGE_ID || '',
+                });
+
+                // Extract page ID from URL
+                const match = meetingNotesUrl.match(/([a-f0-9]{32})/);
+                if (match) {
+                    const pageId = match[1];
+                    const notes = await notion.getPageContent(pageId);
+                    if (notes) {
+                        additionalContext = `Meeting Notes:\n${notes}`;
+                        log.info('Fetched meeting notes for context', { length: notes.length });
+                    }
+                }
+            }
+        } catch (err: any) {
+            log.warn('Failed to fetch meeting notes', { error: err.message });
+        }
+    }
+
+    // Clear the research page before spawning agents (remove placeholders)
+    if (deal.notion_urls) {
+        try {
+            const notionUrls = typeof deal.notion_urls === 'string'
+                ? JSON.parse(deal.notion_urls)
+                : deal.notion_urls;
+
+            const researchUrl = notionUrls.research;
+            if (researchUrl) {
+                const notion = new NotionClient({
+                    token: await getSecret('NOTION_TOKEN'),
+                    parentPageId: process.env.NOTION_PARENT_PAGE_ID || '',
+                });
+                const researchMatch = researchUrl.match(/([a-f0-9]{32})/);
+                if (researchMatch) {
+                    await notion.clearPageContent(researchMatch[1]);
+                    log.info('Cleared research page placeholders');
+                }
+            }
+        } catch (err: any) {
+            log.warn('Failed to clear research page', { error: err.message });
+        }
+    }
+
+    // Spawn parallel research batch
+    await tasksEnqueuer.enqueue({
+        jobType: 'RESEARCH_BATCH',
         tenantId,
         payload: {
             runId,
-            agentKey,
             dealId: deal.id,
             companyName: deal.company_name || 'Unknown Company',
             founderName: deal.founder_name || 'Unknown Founder',
+            additionalContext, // Pass notes to agent
         },
-    }));
+    });
 
-    await tasksEnqueuer.enqueueMany(researchTasks);
-    log.info('Research agents spawned', { count: researchTasks.length });
+    log.info('Research batch spawned');
 
     // Create human diligence subtasks
     const humanSubtasks = [

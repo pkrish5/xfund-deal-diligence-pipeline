@@ -22,62 +22,76 @@ export interface MemoResult {
     }>;
 }
 
+const BASE_ANALYST_PROMPT = `Act as a venture capital analyst preparing an investment diligence report.
+Instructions:
+- Format your output in markdown: use ### for section headings, - for bullet points, and **bold** for emphasis.
+- Write in concise, analytical bullet points (no paragraphs).
+- Quantify claims wherever possible (metrics, growth rates, market size, pricing, headcount, traction, etc.).
+- After each bullet, include the source in parentheses (e.g., (meeting notes), (company website), (Crunchbase), (news: outlet, date), (LinkedIn)).
+- Separate facts from interpretation (label opinions as "Assessment").
+- Highlight key risks, open questions, and diligence gaps.
+- Call out red flags and assumptions explicitly.
+- Use all available information: meeting notes, web search results, public data, and your training knowledge.
+- Only write "Insufficient data found" if you truly cannot find ANY relevant information after searching.
+- When using your general knowledge, note it as (general knowledge) to distinguish from verified sources.
+- No fluff. Prioritize investor-relevant signals over narrative.`;
+
 const RESEARCH_PROMPTS: Record<string, string> = {
-    market_tam: `You are a venture capital research analyst. Analyze the market opportunity and Total Addressable Market (TAM) for the following company. Provide:
+    market_tam: `${BASE_ANALYST_PROMPT}
+
+Analyze the market opportunity and Total Addressable Market (TAM). Provide:
 1. Market size estimates with sources
 2. Growth rate and trends
 3. Key market drivers
-4. TAM/SAM/SOM breakdown if possible
+4. TAM/SAM/SOM breakdown`,
 
-Be specific with numbers and cite sources where possible.`,
+    competitors: `${BASE_ANALYST_PROMPT}
 
-    competitors: `You are a venture capital research analyst. Analyze the competitive landscape for the following company. Provide:
+Analyze the competitive landscape. Provide:
 1. Direct competitors and their funding/stage
 2. Indirect competitors
 3. Competitive advantages/disadvantages
-4. Market positioning map
+4. Market positioning map`,
 
-Be specific and cite sources where possible.`,
+    founder_background: `${BASE_ANALYST_PROMPT}
 
-    founder_background: `You are a venture capital research analyst. Research the founder(s) background for the following company. Provide:
+Research the founder(s) background. Provide:
 1. Educational background
 2. Previous work experience
 3. Previous startups or exits
 4. Domain expertise relevance
-5. Notable achievements or connections
+5. Notable achievements or connections`,
 
-Be specific and cite sources where possible.`,
+    risks_redflags: `${BASE_ANALYST_PROMPT}
 
-    risks_redflags: `You are a venture capital research analyst. Identify potential risks and red flags for the following company. Provide:
+Identify potential risks and red flags. Provide:
 1. Market risks
 2. Execution risks
 3. Regulatory risks
 4. Technology risks
 5. Team risks
 6. Financial/business model risks
+Rate each risk as Low/Medium/High.`,
 
-Be balanced but thorough. Rate each risk as Low/Medium/High.`,
+    product_defensibility: `${BASE_ANALYST_PROMPT}
 
-    product_defensibility: `You are a venture capital research analyst. Analyze the product and defensibility for the following company. Provide:
+Analyze the product and defensibility. Provide:
 1. Product description and value proposition
 2. Technical moat (if any)
 3. Network effects
 4. Switching costs
 5. IP/patents
-6. Data advantages
+6. Data advantages`,
 
-Be specific about what creates lasting competitive advantage.`,
+    traction_signals: `${BASE_ANALYST_PROMPT}
 
-    traction_signals: `You are a venture capital research analyst. Analyze traction signals for the following company. Look for:
-1. Revenue or growth metrics (if publicly available)
+Analyze traction signals. Look for:
+1. Revenue or growth metrics
 2. User/customer counts
 3. Press coverage and media mentions
 4. App store rankings
 5. Social media presence
-6. Job postings (indicator of growth)
-7. Partnership announcements
-
-Be specific with data points and dates.`,
+6. Partnership announcements`,
 };
 
 export class LLMClient {
@@ -98,8 +112,8 @@ export class LLMClient {
     }
 
     /**
-     * Run a research agent for a specific aspect of deal diligence.
-     * Cancellation-aware via AbortSignal.
+     * Run a research agent using OpenAI Responses API with web search.
+     * The model will search the web in real-time for current information.
      */
     async runResearch(
         agentKey: string,
@@ -113,33 +127,56 @@ export class LLMClient {
             throw new Error(`Unknown research agent key: ${agentKey}`);
         }
 
-        const userPrompt = `Company: ${companyName}\nFounder(s): ${founderName}\n${additionalContext ? `\nAdditional Context:\n${additionalContext}` : ''}`;
+        const userPrompt = `Company: ${companyName}\nFounder(s): ${founderName}\n${additionalContext ? `\nPrimary Source Material (Meeting Notes):\n${additionalContext}\n(Prioritize these notes alongside web search results)` : ''}`;
 
         const openai = await this.getClient();
-        const response = await openai.chat.completions.create(
+
+        // Use the Responses API with web_search_preview tool
+        const response = await openai.responses.create(
             {
                 model: this.config.model || 'gpt-4o',
-                messages: [
-                    { role: 'system', content: systemPrompt },
-                    { role: 'user', content: userPrompt },
-                ],
+                instructions: systemPrompt,
+                input: userPrompt,
+                tools: [{ type: 'web_search_preview' }],
                 temperature: 0.3,
-                max_tokens: 2000,
             },
             { signal }
         );
 
-        const content = response.choices[0]?.message?.content || '';
+        // Extract text content from the response output items
+        let content = '';
+        const citations: ResearchResult['citations'] = [];
+
+        for (const item of response.output || []) {
+            if (item.type === 'message') {
+                for (const block of item.content || []) {
+                    if (block.type === 'output_text') {
+                        content += block.text || '';
+                        // Extract inline citations/annotations if present
+                        for (const annotation of block.annotations || []) {
+                            if (annotation.type === 'url_citation') {
+                                citations.push({
+                                    title: annotation.title || 'Source',
+                                    url: annotation.url,
+                                    confidence: 0.85,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         return {
             summary: content,
-            citations: [],
-            confidenceScore: 0.7,
+            citations,
+            confidenceScore: 0.85,
         };
     }
 
     /**
      * Generate an IC memo from research results and meeting notes.
+     * Uses standard Chat Completions API (no web search needed for synthesis).
      */
     async generateMemo(
         companyName: string,
@@ -159,7 +196,9 @@ export class LLMClient {
                 messages: [
                     {
                         role: 'system',
-                        content: `You are a venture capital analyst preparing an Investment Committee (IC) memo. Write a professional, concise memo that synthesizes all research into a clear recommendation. 
+                        content: `${BASE_ANALYST_PROMPT}
+
+Prepare an Investment Committee (IC) memo. 
 
 Structure the memo with these sections:
 1. Executive Summary (2-3 sentences)
@@ -172,12 +211,17 @@ Structure the memo with these sections:
 8. Key Risks
 9. Investment Thesis
 10. Recommendation (Proceed / Pass / More Info Needed)
+   - 3–5 bullet justification
+   - Top follow-up diligence questions
 
-Be direct, data-driven, and highlight both strengths and concerns.`,
+Materials to Use (in priority order):
+1. Meeting Notes (provided by user)
+2. Research Results (provided by user)
+3. General Knowledge`,
                     },
                     {
                         role: 'user',
-                        content: `Company: ${companyName}\nFounder(s): ${founderName}\n\n${meetingNotes ? `Meeting Notes:\n${meetingNotes}\n\n` : ''}Research:\n${researchContext}`,
+                        content: `Company: ${companyName}\nFounder(s): ${founderName}\n\n${meetingNotes ? `Meeting Notes (High Priority):\n${meetingNotes}\n\n` : ''}Research Results:\n${researchContext}`,
                     },
                 ],
                 temperature: 0.4,
