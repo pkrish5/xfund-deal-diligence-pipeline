@@ -8,12 +8,15 @@ import {
 } from '@xfund/shared';
 
 const RESEARCH_ORDER = [
-    'market_tam',
-    'competitors',
-    'founder_background',
-    'risks_redflags',
-    'product_defensibility',
-    'traction_signals',
+    'founders_team',
+    'market_opportunity',
+    'competition',
+    'business_model',
+    'traction',
+    'defensibility',
+    'risks',
+    'questions',
+    'conditions',
 ];
 
 /**
@@ -44,7 +47,7 @@ export async function handleResearchBatch(
         return;
     }
 
-    log.info('Starting research batch (6 parallel agents)', { companyName });
+    log.info('Starting research batch (9 parallel agents)', { companyName });
 
     // Create AbortController
     const abortController = new AbortController();
@@ -61,8 +64,7 @@ export async function handleResearchBatch(
     try {
         // Initialize LLM client
         const llm = new LLMClient({
-            apiKey: await getSecret('OPENAI_API_KEY'),
-            model: process.env.LLM_MODEL || 'gpt-4o',
+            apiKey: await getSecret('PERPLEXITY_API_KEY'),
         });
 
         // 1. Launch all agents in parallel
@@ -141,12 +143,15 @@ export async function handleResearchBatch(
 
 function formatAgentTitle(agentKey: string): string {
     const titles: Record<string, string> = {
-        market_tam: 'Market & TAM Analysis',
-        competitors: 'Competitive Landscape',
-        founder_background: 'Founder Background',
-        risks_redflags: 'Risks & Red Flags',
-        product_defensibility: 'Product & Defensibility',
-        traction_signals: 'Traction Signals',
+        founders_team: '1. Founders & Team Analysis',
+        market_opportunity: '2. Market & Opportunity',
+        competition: '3. Competition',
+        business_model: '4. Business Model',
+        traction: '5. Traction',
+        defensibility: '6. Defensibility',
+        risks: '7. Risks',
+        questions: '8. Questions for Founders',
+        conditions: '9. Conditions for Investment',
     };
     return titles[agentKey] || agentKey;
 }

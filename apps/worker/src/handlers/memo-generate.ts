@@ -42,8 +42,7 @@ export async function handleMemoGenerate(
 
     // Initialize clients
     const llm = new LLMClient({
-        apiKey: await getSecret('OPENAI_API_KEY'),
-        model: process.env.LLM_MODEL || 'gpt-4o',
+        apiKey: await getSecret('PERPLEXITY_API_KEY'),
     });
 
     const notion = new NotionClient({

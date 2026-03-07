@@ -1,6 +1,7 @@
 export interface LLMConfig {
     apiKey: string;
     model?: string;
+    baseURL?: string;
 }
 
 export interface ResearchResult {
@@ -22,76 +23,136 @@ export interface MemoResult {
     }>;
 }
 
-const BASE_ANALYST_PROMPT = `Act as a venture capital analyst preparing an investment diligence report.
+const BASE_ANALYST_PROMPT = `You are an investment analyst at a venture capital firm conducting due diligence.
 Instructions:
-- Format your output in markdown: use ### for section headings, - for bullet points, and **bold** for emphasis.
-- Write in concise, analytical bullet points (no paragraphs).
-- Quantify claims wherever possible (metrics, growth rates, market size, pricing, headcount, traction, etc.).
-- After each bullet, include the source in parentheses (e.g., (meeting notes), (company website), (Crunchbase), (news: outlet, date), (LinkedIn)).
-- Separate facts from interpretation (label opinions as "Assessment").
-- Highlight key risks, open questions, and diligence gaps.
-- Call out red flags and assumptions explicitly.
-- Use all available information: meeting notes, web search results, public data, and your training knowledge.
-- Only write "Insufficient data found" if you truly cannot find ANY relevant information after searching.
-- When using your general knowledge, note it as (general knowledge) to distinguish from verified sources.
-- No fluff. Prioritize investor-relevant signals over narrative.`;
+- Write in concise bullet points under each section.
+- Always quantify metrics or statements when possible (e.g., market size, growth rates, valuation multiples).
+- After each point, cite your source in parentheses — e.g., "(company website)" or "(TechCrunch, Jan 2026)."
+- If external information is used, include the hyperlinked source in markdown format.
+- If you find limited or no data for a section, explicitly note that ("Limited public data found on X").
+- Where data is incomplete, clearly state reasonable assumptions and briefly explain your reasoning.
+- Keep the tone professional and neutral, as if writing for an investment committee memo.
+- Synthesize insights — do not copy text verbatim from sources.
+- Format output in markdown: use ### for sub-section headings, - for bullet points, and **bold** for emphasis.
+- Do NOT use #### headings — use ### as the smallest heading level.
+- Do NOT use ## headings — those are reserved for the top-level section title which is added automatically.
+- Do NOT use markdown tables (| column | format). Instead, present comparative data as bullet points or numbered lists.
+- Each section should include: core findings (2–5 bullet points), quantitative metrics where available, key risks or questions for further diligence.
+- Goal: Deliver a decision-oriented, insight-rich diligence analysis to support an investment recommendation.
+
+CRITICAL — Company Identity Verification:
+- You MUST verify that any information you find actually refers to the EXACT company being researched, using the founder name(s) and meeting notes as ground truth.
+- Many companies share similar names. If you find a company with the same name but different founders, location, or industry, DO NOT use that information. Instead, note: "⚠️ A different company named [X] exists ([description]) — this is NOT the company under diligence."
+- Cross-reference founder names, industry, and any meeting notes context to confirm you have the right entity.
+- If you cannot find reliable public information about the specific company, say "Limited public data found" rather than guessing or using data from a different company.
+- NEVER fabricate URLs, funding amounts, metrics, or quotes. Only cite information you actually found.`;
+
+
 
 const RESEARCH_PROMPTS: Record<string, string> = {
-    market_tam: `${BASE_ANALYST_PROMPT}
+    founders_team: `${BASE_ANALYST_PROMPT}
 
-Analyze the market opportunity and Total Addressable Market (TAM). Provide:
-1. Market size estimates with sources
-2. Growth rate and trends
-3. Key market drivers
-4. TAM/SAM/SOM breakdown`,
+Section: FOUNDERS & TEAM ANALYSIS
+Research the founder(s) and core team. Provide:
+1. Founder backgrounds (education, prior roles, domain expertise)
+2. Previous startups, exits, or notable achievements
+3. Team composition and key hires
+4. Founder-market fit assessment (why are THEY the right team for THIS problem?)
+5. Any red flags (gaps in experience, high turnover, etc.)
+Grade the team on a scale: A/B/C/D with brief justification.`,
 
-    competitors: `${BASE_ANALYST_PROMPT}
+    market_opportunity: `${BASE_ANALYST_PROMPT}
 
+Section: MARKET & OPPORTUNITY
+Analyze the market opportunity. Provide:
+1. Market size estimates (TAM/SAM/SOM) with sources
+2. Growth rate, CAGR, and key market drivers
+3. Timing — why is this the right moment for this company?
+4. Macro tailwinds and headwinds affecting the space
+5. Comparable valuations and recent financings in the sector
+Grade the market on a scale: A/B/C/D with brief justification.`,
+
+    competition: `${BASE_ANALYST_PROMPT}
+
+Section: COMPETITION
 Analyze the competitive landscape. Provide:
-1. Direct competitors and their funding/stage
-2. Indirect competitors
-3. Competitive advantages/disadvantages
-4. Market positioning map`,
+1. Direct competitors — names, funding, stage, key metrics
+2. Indirect competitors and potential entrants
+3. Competitive advantages and disadvantages vs. each
+4. Positioning map (where does this company sit?)
+5. Risk of incumbents entering or acqui-hiring
+Grade competition risk on a scale: A/B/C/D with brief justification.`,
 
-    founder_background: `${BASE_ANALYST_PROMPT}
+    business_model: `${BASE_ANALYST_PROMPT}
 
-Research the founder(s) background. Provide:
-1. Educational background
-2. Previous work experience
-3. Previous startups or exits
-4. Domain expertise relevance
-5. Notable achievements or connections`,
+Section: BUSINESS MODEL
+Analyze the business model. Provide:
+1. Revenue model (SaaS, marketplace, usage-based, etc.)
+2. Pricing strategy and unit economics (ACV, LTV, CAC if available)
+3. Gross margin profile and scalability
+4. Path to profitability or breakeven
+5. Revenue concentration risks
+Grade the business model on a scale: A/B/C/D with brief justification.`,
 
-    risks_redflags: `${BASE_ANALYST_PROMPT}
+    traction: `${BASE_ANALYST_PROMPT}
 
-Identify potential risks and red flags. Provide:
-1. Market risks
-2. Execution risks
-3. Regulatory risks
-4. Technology risks
-5. Team risks
-6. Financial/business model risks
-Rate each risk as Low/Medium/High.`,
+Section: TRACTION
+Analyze traction signals. Provide:
+1. Revenue or ARR (current and growth trajectory)
+2. User/customer counts and growth rates
+3. Key partnerships or signed contracts
+4. Product milestones and launches
+5. Press coverage and media mentions
+6. App store rankings, social media presence, community
+If no public data exists, note that explicitly with suggested questions for founders.
+Grade traction on a scale: A/B/C/D with brief justification.`,
 
-    product_defensibility: `${BASE_ANALYST_PROMPT}
+    defensibility: `${BASE_ANALYST_PROMPT}
 
-Analyze the product and defensibility. Provide:
-1. Product description and value proposition
-2. Technical moat (if any)
-3. Network effects
-4. Switching costs
-5. IP/patents
-6. Data advantages`,
+Section: DEFENSIBILITY
+Analyze the product's defensibility and moat. Provide:
+1. Technical moat (proprietary tech, patents, IP)
+2. Network effects (direct, indirect, data)
+3. Switching costs and lock-in mechanisms
+4. Brand or trust advantages
+5. Data advantages and compounding effects
+6. How replicable is this by a well-funded competitor?
+Grade defensibility on a scale: A/B/C/D with brief justification.`,
 
-    traction_signals: `${BASE_ANALYST_PROMPT}
+    risks: `${BASE_ANALYST_PROMPT}
 
-Analyze traction signals. Look for:
-1. Revenue or growth metrics
-2. User/customer counts
-3. Press coverage and media mentions
-4. App store rankings
-5. Social media presence
-6. Partnership announcements`,
+Section: RISKS
+Identify and categorize all material risks. Provide:
+1. Market risks (timing, adoption, demand)
+2. Execution risks (team, hiring, scaling)
+3. Technology risks (feasibility, reliability)
+4. Competitive risks (displacement, commoditization)
+5. Regulatory/legal risks
+6. Financial risks (burn rate, funding dependency)
+7. Strategic risks (brand confusion, key-person dependency)
+Rate each risk as Low/Medium/High with brief justification.`,
+
+    questions: `${BASE_ANALYST_PROMPT}
+
+Section: QUESTIONS FOR FOUNDERS
+Based on your research, generate the most important diligence questions organized by category:
+1. Competition — what questions should we ask about competitive positioning?
+2. Traction — what metrics and proof points should we request?
+3. Business Model — what questions about unit economics, pricing, and revenue?
+4. Team — what questions about hiring plans, org structure, and gaps?
+5. Defensibility — what questions about moat, IP, and data rights?
+Format as clear, specific questions that would surface decision-relevant information.`,
+
+    conditions: `${BASE_ANALYST_PROMPT}
+
+Section: CONDITIONS FOR INVESTMENT
+Based on all available information, provide:
+1. Bull Case (Path to Success) — 2-3 scenarios where this becomes a great investment
+2. Bear Case (Failure Modes) — 2-3 scenarios where this fails
+3. Required Answers Before Committing — what must be verified before investing?
+4. If Investing (Indicative Stance) — under what conditions would you proceed?
+5. Overall recommendation: Proceed / Pass / More Info Needed with 3-5 bullet justification
+Be specific and evidence-based in each scenario.`,
 };
 
 export class LLMClient {
@@ -105,15 +166,18 @@ export class LLMClient {
     private async getClient(): Promise<any> {
         if (!this.clientPromise) {
             this.clientPromise = import('openai').then(
-                (mod) => new mod.default({ apiKey: this.config.apiKey })
+                (mod) => new mod.default({
+                    apiKey: this.config.apiKey,
+                    baseURL: this.config.baseURL || 'https://api.perplexity.ai',
+                })
             );
         }
         return this.clientPromise;
     }
 
     /**
-     * Run a research agent using OpenAI Responses API with web search.
-     * The model will search the web in real-time for current information.
+     * Run a research agent using Perplexity's Chat Completions API with built-in web search.
+     * Perplexity automatically searches the web and cites sources.
      */
     async runResearch(
         agentKey: string,
@@ -129,41 +193,32 @@ export class LLMClient {
 
         const userPrompt = `Company: ${companyName}\nFounder(s): ${founderName}\n${additionalContext ? `\nPrimary Source Material (Meeting Notes):\n${additionalContext}\n(Prioritize these notes alongside web search results)` : ''}`;
 
-        const openai = await this.getClient();
+        const client = await this.getClient();
 
-        // Use the Responses API with web_search_preview tool
-        const response = await openai.responses.create(
+        const response = await client.chat.completions.create(
             {
-                model: this.config.model || 'gpt-4o',
-                instructions: systemPrompt,
-                input: userPrompt,
-                tools: [{ type: 'web_search_preview' }],
+                model: this.config.model || 'sonar-pro',
+                messages: [
+                    { role: 'system', content: systemPrompt },
+                    { role: 'user', content: userPrompt },
+                ],
                 temperature: 0.3,
+                web_search_options: { search_context_size: 'high' },
             },
             { signal }
         );
 
-        // Extract text content from the response output items
-        let content = '';
+        const content = response.choices[0]?.message?.content || '';
         const citations: ResearchResult['citations'] = [];
 
-        for (const item of response.output || []) {
-            if (item.type === 'message') {
-                for (const block of item.content || []) {
-                    if (block.type === 'output_text') {
-                        content += block.text || '';
-                        // Extract inline citations/annotations if present
-                        for (const annotation of block.annotations || []) {
-                            if (annotation.type === 'url_citation') {
-                                citations.push({
-                                    title: annotation.title || 'Source',
-                                    url: annotation.url,
-                                    confidence: 0.85,
-                                });
-                            }
-                        }
-                    }
-                }
+        // Extract citations from Perplexity's response
+        if (response.citations && Array.isArray(response.citations)) {
+            for (const url of response.citations) {
+                citations.push({
+                    title: url,
+                    url: url,
+                    confidence: 0.85,
+                });
             }
         }
 
@@ -189,10 +244,10 @@ export class LLMClient {
             .map(([key, content]) => `## ${key}\n${content}`)
             .join('\n\n');
 
-        const openai = await this.getClient();
-        const response = await openai.chat.completions.create(
+        const client = await this.getClient();
+        const response = await client.chat.completions.create(
             {
-                model: this.config.model || 'gpt-4o',
+                model: this.config.model || 'sonar-pro',
                 messages: [
                     {
                         role: 'system',

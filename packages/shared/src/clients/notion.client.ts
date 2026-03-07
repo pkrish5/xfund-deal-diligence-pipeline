@@ -307,11 +307,15 @@ export class NotionClient {
 
     /**
      * Parse markdown-style text into proper Notion blocks.
-     * Supports: ## headings, ### headings, - bullets, numbered lists, **bold**, *italic*, and paragraphs.
+     * Supports: ## headings, ### headings, #### headings, - bullets, numbered lists,
+     * **bold**, *italic*, markdown tables, and paragraphs.
      */
     markdownToBlocks(markdown: string): BlockObjectRequest[] {
         const blocks: BlockObjectRequest[] = [];
         const lines = markdown.split('\n');
+
+        // First pass: extract table header row for column names
+        let tableHeaders: string[] = [];
 
         for (let i = 0; i < lines.length; i++) {
             const line = lines[i].trim();
@@ -325,9 +329,39 @@ export class NotionClient {
             else if (line.startsWith('### ')) {
                 blocks.push(this.heading3(line.slice(4).trim()));
             }
+            // #### Heading 4 (Notion doesn't have h4, use h3 as fallback)
+            else if (line.startsWith('#### ')) {
+                blocks.push(this.heading3(line.slice(5).trim()));
+            }
             // # Heading 1 (treat as heading 2 in Notion)
             else if (line.startsWith('# ')) {
                 blocks.push(this.heading2(line.slice(2).trim()));
+            }
+            // Table separator row (|---|---|) — skip
+            else if (/^\|[-\s|:]+\|$/.test(line)) {
+                continue;
+            }
+            // Table row (| col1 | col2 |)
+            else if (line.startsWith('|') && line.endsWith('|')) {
+                const cells = line.split('|').filter(c => c.trim()).map(c => c.trim());
+                if (cells.length === 0) continue;
+
+                // Check if next line is a separator (meaning this is a header row)
+                const nextLine = (i + 1 < lines.length) ? lines[i + 1].trim() : '';
+                if (/^\|[-\s|:]+\|$/.test(nextLine)) {
+                    // This is a header row — save headers for subsequent data rows
+                    tableHeaders = cells;
+                    continue;
+                }
+
+                // Data row — format as bullet with "Header: Value" pairs
+                if (tableHeaders.length > 0 && cells.length === tableHeaders.length) {
+                    const parts = cells.map((cell, idx) => `**${tableHeaders[idx]}**: ${cell}`);
+                    blocks.push(this.richBullet(parts.join(' | ')));
+                } else {
+                    // No headers or mismatch — just join cells
+                    blocks.push(this.richBullet(cells.join(' | ')));
+                }
             }
             // - Bullet or * Bullet (but not ** which is bold)
             else if (/^-\s/.test(line) || /^\*\s[^*]/.test(line)) {
