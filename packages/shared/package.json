@@ -9,6 +9,7 @@
         "test": "vitest run"
     },
     "dependencies": {
+        "@anthropic-ai/sdk": "^0.39.0",
         "@google-cloud/secret-manager": "^5.5.0",
         "@google-cloud/tasks": "^5.1.0",
         "@notionhq/client": "^2.2.14",

@@ -112,6 +112,9 @@ export async function handleStageAction(
             case 'IC_REVIEW':
                 await handleICReview(tenantId, deal, taskGid, run.id, log);
                 break;
+            case 'POST_DILIGENCE':
+                await handleICReview(tenantId, deal, taskGid, run.id, log);
+                break;
             case 'PASS':
                 await handlePass(tenantId, deal, taskGid, run.id, log);
                 break;
@@ -280,9 +283,9 @@ async function handleICReview(
 ): Promise<void> {
     const asana = new AsanaClient({ token: await getSecret('ASANA_TOKEN') });
 
-    // Generate IC memo
+    // Generate scorecard + IC memo via SYNTHESIZE → REVIEW pipeline
     await tasksEnqueuer.enqueue({
-        jobType: 'MEMO_GENERATE',
+        jobType: 'SYNTHESIZE',
         tenantId,
         payload: {
             runId,

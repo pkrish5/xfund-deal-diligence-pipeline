@@ -6,6 +6,9 @@ import { handleStageAction } from '../handlers/stage-action.js';
 import { handleResearchAgent } from '../handlers/research-agent.js';
 import { handleResearchBatch } from '../handlers/research-batch.js';
 import { handleMemoGenerate } from '../handlers/memo-generate.js';
+import { handleVerify } from '../handlers/verify.js';
+import { handleSynthesize } from '../handlers/synthesize.js';
+import { handleReview } from '../handlers/review.js';
 
 export const dispatchRouter = Router();
 
@@ -18,6 +21,9 @@ const HANDLERS: Record<JobType, Handler> = {
     RESEARCH_AGENT: handleResearchAgent,
     RESEARCH_BATCH: handleResearchBatch,
     MEMO_GENERATE: handleMemoGenerate,
+    VERIFY: handleVerify,
+    SYNTHESIZE: handleSynthesize,
+    REVIEW: handleReview,
 };
 
 /**

@@ -4,7 +4,10 @@ export type JobType =
     | 'STAGE_ACTION'
     | 'RESEARCH_AGENT'
     | 'RESEARCH_BATCH'
-    | 'MEMO_GENERATE';
+    | 'MEMO_GENERATE'
+    | 'VERIFY'
+    | 'SYNTHESIZE'
+    | 'REVIEW';
 
 const QUEUE_MAP: Record<JobType, string> = {
     GCAL_SYNC: 'q-gcal-sync',
@@ -13,6 +16,9 @@ const QUEUE_MAP: Record<JobType, string> = {
     RESEARCH_AGENT: 'q-research',
     RESEARCH_BATCH: 'q-research',
     MEMO_GENERATE: 'q-research',
+    VERIFY: 'q-research',
+    SYNTHESIZE: 'q-research',
+    REVIEW: 'q-research',
 };
 
 export interface TaskPayload {
