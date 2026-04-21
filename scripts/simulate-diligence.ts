@@ -112,22 +112,36 @@ async function main() {
     sep('PHASE 1 — RESEARCH  (9 agents in parallel)');
     console.log(`Running all 9 domain agents for "${COMPANY_NAME}"...\n`);
 
-    const agentPromises = RESEARCH_ORDER.map(async (agentKey: AgentKey) => {
+    const runAgentWithRetry = async (agentKey: AgentKey, maxRetries = 3) => {
         const label = AGENT_DISPLAY_TITLES[agentKey];
-        try {
-            const result = await runDomainAgent(agentConfig, {
-                agentKey,
-                companyName: COMPANY_NAME,
-                founderName: FOUNDER_NAME,
-                additionalContext: ADDITIONAL_CONTEXT || undefined,
-            });
-            console.log(`  [done] ${label} — Score: ${result.output.provisionalScore} | Findings: ${result.output.findings.length}`);
-            return { agentKey, result, success: true as const };
-        } catch (err: any) {
-            console.error(`  [fail] ${label} — ${err.message}`);
-            return { agentKey, error: err, success: false as const };
+        let lastErr: any;
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                const result = await runDomainAgent(agentConfig, {
+                    agentKey,
+                    companyName: COMPANY_NAME,
+                    founderName: FOUNDER_NAME,
+                    additionalContext: ADDITIONAL_CONTEXT || undefined,
+                });
+                console.log(`  [done] ${label} — Score: ${result.output.provisionalScore} | Findings: ${result.output.findings.length}`);
+                return { agentKey, result, success: true as const };
+            } catch (err: any) {
+                lastErr = err;
+                const isRateLimit = err.message?.includes('429') || err.message?.includes('rate_limit');
+                if (isRateLimit && attempt < maxRetries) {
+                    const waitSec = 30 * attempt;
+                    console.log(`  [retry ${attempt}/${maxRetries}] ${label} — rate limited, waiting ${waitSec}s...`);
+                    await new Promise(r => setTimeout(r, waitSec * 1000));
+                } else {
+                    break;
+                }
+            }
         }
-    });
+        console.error(`  [fail] ${label} — ${lastErr.message}`);
+        return { agentKey, error: lastErr, success: false as const };
+    };
+
+    const agentPromises = RESEARCH_ORDER.map(agentKey => runAgentWithRetry(agentKey));
 
     const agentResults = await Promise.all(agentPromises);
     const successful = agentResults.filter(r => r.success);
